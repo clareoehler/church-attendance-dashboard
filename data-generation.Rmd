@@ -1,0 +1,142 @@
+---
+title: "Preprocessing data generation file"
+author: "Clare Kofman"
+date: "2026-02-20"
+output: html_document
+---
+
+# Load Packages
+
+```{r}
+library(tidyverse)
+library(lubridate)
+
+set.seed(123)  # makes data reproducible
+```
+
+# 1. Generate Budget Data (3 years)
+
+```{r}
+years <- 2023:2025
+
+# tribble() creates a tibble.
+#A tibble is a modern version of a data frame from the tidyverse (specifically the tibble package, which loads with tidyverse)
+
+categories <- tribble( 
+  ~category, ~subcategory, ~base_budget,
+  "Worship", "Music Equipment", 12000,
+  "Worship", "Guest Speakers", 5000,
+  "Children's Ministry", "Curriculum", 8000,
+  "Children's Ministry", "Events", 6000,
+  "Outreach", "Community Events", 10000,
+  "Operations", "Utilities", 18000,
+  "Operations", "Facilities Maintenance", 15000
+)
+
+budget_data <- expand_grid(year = years, categories) %>%
+  mutate(
+    annual_budget = round(base_budget * runif(n(), 0.95, 1.15)),
+    actual_spent = round(annual_budget * runif(n(), 0.6, 1.05)),
+    last_updated = as.Date(paste0(year, "-09-01"))
+  ) %>%
+  select(year, category, subcategory, annual_budget, actual_spent, last_updated)
+
+write_csv(budget_data, "budget_2023_2025.csv")
+```
+
+# 2. Generate Donations Data (Weekly Giving Patterns)
+
+```{r}
+dates <- seq.Date(as.Date("2023-01-01"),
+                  as.Date("2025-12-31"),
+                  by = "week")
+
+funds <- c("General", "Missions", "Building", "Benevolence")
+payment_methods <- c("Online", "Check", "Cash")
+
+donations_data <- map_dfr(dates, function(d) {
+  
+  # Seasonal giving boost in December
+  seasonal_multiplier <- ifelse(month(d) == 12, 1.4, 1)
+  
+  n_donations <- rpois(1, lambda = 60 * seasonal_multiplier)
+  
+  tibble(
+    donation_id = paste0("D", sample(100000:999999, n_donations)),
+    donor_id = paste0("U", sample(100:999, n_donations, replace = TRUE)),
+    donation_date = d,
+    amount = round(rlnorm(n_donations, log(120), 0.6), 2),
+    fund = sample(funds, n_donations, replace = TRUE, prob = c(0.6, 0.2, 0.15, 0.05)),
+    payment_method = sample(payment_methods, n_donations, replace = TRUE, prob = c(0.65, 0.25, 0.10)),
+    recurring = sample(c(TRUE, FALSE), n_donations, replace = TRUE, prob = c(0.55, 0.45))
+  )
+})
+
+write_csv(donations_data, "donations_2023_2025.csv")
+```
+
+This creates:
+- Seasonal December boost
+- Realistic skewed donation distribution
+- Fund allocation patterns
+
+# 3. Generate Weekly Attendance Data
+
+```{r}
+attendance_dates <- seq.Date(as.Date("2023-01-01"),
+                             as.Date("2025-12-31"),
+                             by = "week")
+
+attendance_data <- tibble(
+  service_date = attendance_dates,
+  service_type = "Sunday AM"
+) %>%
+  mutate(
+    base_attendance = 300 + (year(service_date) - 2023) * 15,  # gradual growth
+    seasonal_adjustment = case_when(
+      month(service_date) %in% c(6,7) ~ -20,  # summer dip
+      month(service_date) == 12 ~ 30,         # Christmas boost
+      TRUE ~ 0
+    ),
+    total_attendance = round(rnorm(n(), base_attendance + seasonal_adjustment, 20)),
+    children_attendance = round(total_attendance * runif(n(), 0.18, 0.25)),
+    first_time_guests = round(rpois(n(), 8)),
+    volunteers_serving = round(total_attendance * runif(n(), 0.12, 0.18))
+  ) %>%
+  select(service_date, service_type, total_attendance,
+         children_attendance, first_time_guests, volunteers_serving)
+
+write_csv(attendance_data, "attendance_2023_2025.csv")
+```
+
+This includes:
+- Year-over-year growth
+- Summer dip
+- December boost
+- Realistic variance
+
+# 4. Generate Volunteer Data
+
+```{r}
+ministries <- c("Children's Ministry", "Worship", "Hospitality",
+                "Youth", "Outreach", "Tech")
+
+volunteers_data <- tibble(
+  volunteer_id = paste0("V", 1001:1150),
+  ministry = sample(ministries, 150, replace = TRUE),
+  start_date = sample(seq.Date(as.Date("2020-01-01"),
+                               as.Date("2025-01-01"),
+                               by = "day"), 150),
+  active = sample(c(TRUE, FALSE), 150, replace = TRUE, prob = c(0.8, 0.2)),
+  hours_per_month = ifelse(active,
+                           round(rnorm(150, 12, 4)),
+                           0)
+)
+
+write_csv(volunteers_data, "volunteers_2023_2025.csv")
+```
+
+This gives:
+- Active/inactive volunteers
+- Ministry breakdown
+- Tenure tracking capability
