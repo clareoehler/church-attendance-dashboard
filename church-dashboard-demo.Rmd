@@ -1,37 +1,494 @@
 ---
 title: "Church Dashboard Demo"
+runtime: shiny
 output: 
   flexdashboard::flex_dashboard:
-    orientation: columns
-    vertical_layout: fill
+    orientation: rows
 ---
 
 ```{r setup, include=FALSE}
 library(flexdashboard)
+library(plotly)
 library(shiny)
+library(tidyverse)
+library(lubridate)
+library(scales)
+
+budget_data <- read_csv("budget_2023_2025.csv")
+donations_data <- read_csv("donations_2023_2025.csv")
+attendance_data <- read_csv("attendance_2023_2025.csv")
+volunteers_data <- read_csv("volunteers_2023_2025.csv")
+
+# data cleanup
+attendance_data$service_date <- as.Date(attendance_data$service_date)
+donations_data$donation_date <- as.Date(donations_data$donation_date)
 ```
 
-Column {data-width=650}
+# Overview 
+
+
+Sidebar {.sidebar}
 -----------------------------------------------------------------------
 
-### Chart A
+**Filtering Page**
 
 ```{r}
+dateRangeInput(
+  "date_filter",
+  "Select Date Range:",
+  start = min(attendance_data$service_date),
+  end   = max(attendance_data$service_date)
+)
 
 ```
 
-Column {data-width=350}
+```{r}
+# Variables reactive to user input 
+
+filtered_attendance <- reactive({
+  attendance_data %>%
+    filter(service_date >= input$date_filter[1],
+           service_date <= input$date_filter[2])
+})
+
+filtered_donations <- reactive({
+  donations_data %>%
+    filter(donation_date >= input$date_filter[1],
+           donation_date <= input$date_filter[2],
+           )
+})
+
+giving_per_attendee_data <- reactive({
+
+  # Monthly giving
+  giving_monthly <- filtered_donations() %>%
+    mutate(month = floor_date(donation_date, "month")) %>%
+    group_by(month) %>%
+    summarise(total_giving = sum(amount), .groups = "drop")
+
+  # Monthly attendance
+  attendance_monthly <- filtered_attendance() %>%
+    mutate(month = floor_date(service_date, "month")) %>%
+    group_by(month) %>%
+    summarise(total_attendance = sum(total_attendance), .groups = "drop")
+
+  # Join them
+  combined <- left_join(giving_monthly, attendance_monthly, by = "month") %>%
+    filter(!is.na(total_attendance), total_attendance > 0) %>%
+    mutate(giving_per_attendee = total_giving / total_attendance) %>%
+    arrange(month)
+
+  combined
+})
+```
+
+Row 
 -----------------------------------------------------------------------
 
-### Chart B
+
+### Total Attendance
 
 ```{r}
+renderValueBox({
+  valueBox(
+    comma(sum(filtered_attendance()$total_attendance)),
+    icon = "fa-users",
+    color = "blue"
+  )
+})
+```
+
+### Growth 
+
+```{r}
+renderValueBox({
+
+  plot_data <- filtered_attendance() %>%
+    group_by(service_date) %>%
+    summarise(total = sum(total_attendance)) %>%
+    arrange(service_date)
+
+  if(nrow(plot_data) < 2) {
+    return(
+      valueBox("N/A", "Attendance Growth", icon = "fa-chart-line", color = "purple")
+    )
+  }
+
+  first_val <- first(plot_data$total)
+  last_val  <- last(plot_data$total)
+
+  growth <- ((last_val - first_val) / first_val) * 100
+
+  valueBox(
+    paste0(round(growth, 1), "%"),
+    "Attendance Growth",
+    icon = "fa-chart-line",
+    color = ifelse(growth >= 0, "purple", "red")
+  )
+})
+```
+
+
+### Donations
+
+```{r}
+renderValueBox({
+  valueBox(
+  scales::dollar(sum(filtered_donations()$amount)),
+  icon = "fa-hand-holding-usd",
+  color = "green"
+)
+})
+```
+
+### Monthly Giving Per Attendee
+
+```{r}
+renderValueBox({
+
+  total_giving <- sum(filtered_donations()$amount, na.rm = TRUE)
+  total_attendance <- sum(filtered_attendance()$total_attendance, na.rm = TRUE)
+
+  if(total_attendance == 0){
+    return(
+      valueBox("N/A", "Giving per Attendee", icon = "fa-user-dollar", color = "orange")
+    )
+  }
+
+  giving_per_attendee <- total_giving / total_attendance
+
+  valueBox(
+    scales::dollar(round(giving_per_attendee, 2)),
+    "Giving per Attendee",
+    icon = "fa-user-dollar",
+    color = "orange"
+  )
+})
+```
+
+### Growth in Giving Per Attendee
+
+```{r}
+renderValueBox({
+
+  plot_data <- giving_per_attendee_data()
+
+  if(nrow(plot_data) < 2){
+    return(
+      valueBox("N/A", "Growth in Giving per Attendee", icon = "fa-chart-line", color = "orange")
+    )
+  }
+
+  first_val <- first(plot_data$giving_per_attendee)
+  last_val  <- last(plot_data$giving_per_attendee)
+
+  growth <- ((last_val - first_val) / first_val) * 100
+
+  valueBox(
+    paste0(round(growth, 1), "%"),
+    "Growth in Giving per Attendee",
+    icon = "fa-chart-line",
+    color = ifelse(growth >= 0, "pink", "red")
+  )
+})
+```
+
+
+Row 
+--------------------------------
+
+
+### Attendance Trend chart
+
+```{r}
+renderPlotly({
+
+  plot_data <- filtered_attendance() %>%
+    group_by(service_date) %>%
+    summarise(total = sum(total_attendance)) %>%
+    arrange(service_date)
+
+  if(nrow(plot_data) < 2){
+    return(NULL)
+  }
+
+  # Convert date to numeric for regression
+  plot_data$date_num <- as.numeric(plot_data$service_date)
+
+  # Linear model
+  model <- lm(total ~ date_num, data = plot_data)
+
+  # Predicted trend values
+  plot_data$trend <- predict(model)
+
+  plot_ly() %>%
+
+    # Main attendance line
+    add_lines(
+      data = plot_data,
+      x = ~service_date,
+      y = ~total,
+      name = "Attendance",
+      hovertemplate = paste(
+        "Date: %{x}<br>",
+        "Attendance: %{y:,}<extra></extra>"
+      )
+    ) %>%
+
+    # Dashed regression trend line
+    add_lines(
+      data = plot_data,
+      x = ~service_date,
+      y = ~trend,
+      name = "Trend",
+      line = list(dash = "dash", color = "grey"),
+      hoverinfo = "skip"
+    ) %>%
+
+    layout(
+      title = "Attendance Over Time",
+      xaxis = list(title = ""),
+      yaxis = list(title = "Attendance")
+    )
+})
+```
+
+Row 
+--------------------------------
+
+### Total Monthly Giving trend chart
+
+```{r}
+renderPlotly({
+
+  plot_data <- filtered_donations() %>%
+    mutate(month = floor_date(donation_date, "month")) %>%
+    group_by(month) %>%
+    summarise(total = sum(amount)) %>%
+    arrange(month)
+
+  if(nrow(plot_data) < 2){
+    return(NULL)
+  }
+
+  # Regression
+  plot_data$date_num <- as.numeric(plot_data$month)
+  model <- lm(total ~ date_num, data = plot_data)
+  plot_data$trend <- predict(model)
+
+  plot_ly() %>%
+
+    add_lines(
+      data = plot_data,
+      x = ~month,
+      y = ~total,
+      name = "Giving",
+      hovertemplate = paste(
+        "Month: %{x}<br>",
+        "Total Giving: $%{y:,.0f}<extra></extra>"
+      )
+    ) %>%
+
+    add_lines(
+      data = plot_data,
+      x = ~month,
+      y = ~trend,
+      name = "Trend",
+      line = list(dash = "dash", color = "grey"),
+      hoverinfo = "skip"
+    ) %>%
+
+    layout(
+      title = "Giving Over Time",
+      xaxis = list(title = ""),
+      yaxis = list(title = "Total Giving")
+    )
+})
+```
+
+Row 
+--------------------------------
+
+### Giving per Attendee 
+
+
+```{r}
+renderPlotly({
+
+  plot_data <- giving_per_attendee_data()
+
+  if(nrow(plot_data) < 2){
+    return(NULL)
+  }
+
+  plot_data$date_num <- as.numeric(plot_data$month)
+  model <- lm(giving_per_attendee ~ date_num, data = plot_data)
+  plot_data$trend <- predict(model)
+
+  plot_ly() %>%
+
+    add_lines(
+      data = plot_data,
+      x = ~month,
+      y = ~giving_per_attendee,
+      name = "Giving per Attendee",
+      hovertemplate = paste(
+        "Month: %{x}<br>",
+        "Giving per Attendee: $%{y:.2f}<extra></extra>"
+      )
+    ) %>%
+
+    add_lines(
+      data = plot_data,
+      x = ~month,
+      y = ~trend,
+      name = "Trend",
+      line = list(dash = "dash", color = "grey"),
+      hoverinfo = "skip"
+    ) %>%
+
+    layout(
+      title = "Giving per Attendee Over Time",
+      xaxis = list(title = ""),
+      yaxis = list(title = "Dollars per Attendee")
+    )
+})
+```
+
+Column
+---------------------------------
+
+
+
+# Attendance 
+
+Best visuals:
+
+Line chart: Weekly attendance
+
+Bar chart: Guests per month
+
+Stacked area: Adults vs children
+
+# Giving
+
+
+Sidebar {.sidebar}
+-----------------------------------------------------------------------
+
+**Filtering Page**
+
+```{r}
+dateRangeInput(
+  "date_filter_giving",
+  "Select Date Range:",
+  start = min(attendance_data$service_date),
+  end   = max(attendance_data$service_date)
+)
+
+selectInput(
+  "fund_filter",
+  "Select Fund:",
+  choices = unique(donations_data$fund),
+  selected = unique(donations_data$fund),
+  multiple = TRUE
+)
 
 ```
 
-### Chart C
+
+Best visuals:
+
+Line chart: Monthly giving
+
+Bar chart: Giving by fund
+
+Pie chart: Fund distribution
+
+Histogram: Donation size distribution
+
+
+### Bar chart
 
 ```{r}
+renderPlotly({
 
+  plot_data <- filtered_donations() %>%
+    group_by(fund) %>%
+    summarise(total = sum(amount))
+
+  p <- ggplot(plot_data, aes(
+        x = fund,
+        y = total,
+        text = paste(
+          "Fund:", fund,
+          "<br>Total:", scales::dollar(total)
+        )
+      )) +
+      geom_col() +
+      labs(
+        title = "Giving by Fund",
+        x = "",
+        y = "Total Giving"
+      ) +
+      theme_minimal()
+
+  ggplotly(p, tooltip = "text")
+})
 ```
+
+# Budget
+
+Bar chart: Budget vs Actual by category
+✔ Pie chart: % of total budget by category
+✔ Horizontal bar chart: Remaining budget
+
+Pie chart works here because:
+
+It shows allocation proportions clearly
+
+Churches think in “where is our money going?”
+
+But always pair pie chart with numeric labels.
+
+### Pie chart
+
+```{r}
+renderPlotly({
+
+  plot_data <- budget_data %>%
+    group_by(category) %>%
+    summarise(total = sum(amount))
+
+  p <- ggplot(plot_data, aes(
+        x = "",
+        y = total,
+        fill = category,
+        text = paste(
+          category,
+          "<br>Total:", scales::dollar(total)
+        )
+      )) +
+      geom_col() +
+      coord_polar(theta = "y") +
+      labs(title = "Budget Allocation") +
+      theme_void()
+
+  ggplotly(p, tooltip = "text")
+})
+```
+
+# Volunteers
+
+Great visuals:
+
+Value box: Total active volunteers
+
+Bar chart: Volunteers by ministry
+
+Histogram: Hours per month
+
+Line chart: New volunteers per month
+
+You can compute retention if you want to look fancy.
 
