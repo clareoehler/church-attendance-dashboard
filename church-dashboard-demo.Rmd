@@ -6,6 +6,66 @@ output:
     orientation: rows
 ---
 
+```{css}
+/* Scrollable tab content */
+.tab-content {
+  max-height: 100vh;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+/* Soft feminine background */
+body {
+  background-color: #FAF7FB;
+}
+
+/* Header (top navbar) */
+.navbar {
+  background-color: #5C5470 !important;   /* muted plum */
+  border-color: #5C5470 !important;
+}
+
+/* Header title text */
+.navbar-brand {
+  color: #FFFFFF !important;
+  font-weight: 600;
+}
+
+/* Top tab text */
+.navbar-nav > li > a {
+  color: #F8F6FB !important;
+}
+
+/* Active tab */
+.navbar-nav > .active > a,
+.navbar-nav > .active > a:focus,
+.navbar-nav > .active > a:hover {
+  background-color: #9F86C0 !important;   /* soft lavender */
+  color: white !important;
+}
+
+/* Sidebar background */
+.section.sidebar {
+  background-color: #F1EDF7 !important;  /* very light lavender */
+  border-right: 1px solid #E0D8EC;
+}
+
+/* Sidebar title */
+.section.sidebar h2 {
+  color: #5C5470;
+}
+
+/* Date input border */
+.form-control {
+  border-color: #9F86C0;
+}
+
+/* Headings */
+h1, h2, h3 {
+  color: #5C5470;
+}
+```
+
 ```{r setup, include=FALSE}
 library(flexdashboard)
 library(plotly)
@@ -22,10 +82,19 @@ volunteers_data <- read_csv("volunteers_2023_2025.csv")
 # data cleanup
 attendance_data$service_date <- as.Date(attendance_data$service_date)
 donations_data$donation_date <- as.Date(donations_data$donation_date)
+
+# Soft Feminine Church Palette
+church_colors <- list(
+  primary   = "#5C5470",  # muted plum
+  secondary = "#9F86C0",  # soft lavender
+  accent    = "#E5989B",  # dusty rose
+  success   = "#84A98C",  # sage green
+  neutral   = "#B8B8C6",  # light cool gray
+  danger    = "#C44569"   # muted berry
+)
 ```
 
-# Overview 
-
+# Ministry Overview
 
 Sidebar {.sidebar}
 -----------------------------------------------------------------------
@@ -58,6 +127,8 @@ filtered_donations <- reactive({
            )
 })
 
+
+
 giving_per_attendee_data <- reactive({
 
   # Monthly giving
@@ -82,9 +153,8 @@ giving_per_attendee_data <- reactive({
 })
 ```
 
-Row 
+Row {.no-padding}
 -----------------------------------------------------------------------
-
 
 ### Total Attendance
 
@@ -93,10 +163,38 @@ renderValueBox({
   valueBox(
     comma(sum(filtered_attendance()$total_attendance)),
     icon = "fa-users",
-    color = "blue"
+    color = church_colors$primary
   )
 })
 ```
+
+### Average Weekly Attendance
+
+```{r}
+renderValueBox({
+
+  weekly_data <- filtered_attendance() %>%
+    group_by(service_date) %>%
+    summarise(total = sum(total_attendance), .groups = "drop")
+
+  if(nrow(weekly_data) == 0){
+    return(
+      valueBox("N/A", "Avg Weekly Attendance", icon = "fa-chart-bar", color = church_colors$primary)
+    )
+  }
+
+  avg_weekly <- mean(weekly_data$total, na.rm = TRUE)
+
+  valueBox(
+    comma(round(avg_weekly, 0)),
+    "Avg Weekly Attendance",
+    icon = "fa-chart-bar",
+    color = church_colors$primary
+  )
+})
+```
+
+
 
 ### Growth 
 
@@ -110,7 +208,7 @@ renderValueBox({
 
   if(nrow(plot_data) < 2) {
     return(
-      valueBox("N/A", "Attendance Growth", icon = "fa-chart-line", color = "purple")
+      valueBox("N/A", "Attendance Growth", icon = "fa-chart-line", color = church_colors$primary)
     )
   }
 
@@ -123,7 +221,7 @@ renderValueBox({
     paste0(round(growth, 1), "%"),
     "Attendance Growth",
     icon = "fa-chart-line",
-    color = ifelse(growth >= 0, "purple", "red")
+    color = ifelse(growth >= 0, church_colors$success, church_colors$danger)
   )
 })
 ```
@@ -136,7 +234,7 @@ renderValueBox({
   valueBox(
   scales::dollar(sum(filtered_donations()$amount)),
   icon = "fa-hand-holding-usd",
-  color = "green"
+  color = church_colors$accent
 )
 })
 ```
@@ -146,25 +244,27 @@ renderValueBox({
 ```{r}
 renderValueBox({
 
-  total_giving <- sum(filtered_donations()$amount, na.rm = TRUE)
-  total_attendance <- sum(filtered_attendance()$total_attendance, na.rm = TRUE)
+  donor_count <- filtered_donations() %>%
+    summarise(n = n_distinct(donor_id)) %>%
+    pull(n)
 
-  if(total_attendance == 0){
-    return(
-      valueBox("N/A", "Giving per Attendee", icon = "fa-user-dollar", color = "orange")
-    )
+  total_giving <- sum(filtered_donations()$amount, na.rm = TRUE)
+
+  if(donor_count == 0){
+    return(valueBox("N/A", "Avg Giving per Donor", icon = "fa-user-dollar", color = church_colors$primary))
   }
 
-  giving_per_attendee <- total_giving / total_attendance
+  avg_per_donor <- total_giving / donor_count
 
   valueBox(
-    scales::dollar(round(giving_per_attendee, 2)),
-    "Giving per Attendee",
+    scales::dollar(round(avg_per_donor)),
+    "Avg Giving per Donor (in selected time frame)",
     icon = "fa-user-dollar",
-    color = "orange"
+    color = church_colors$accent
   )
 })
 ```
+
 
 ### Growth in Giving Per Attendee
 
@@ -175,7 +275,7 @@ renderValueBox({
 
   if(nrow(plot_data) < 2){
     return(
-      valueBox("N/A", "Growth in Giving per Attendee", icon = "fa-chart-line", color = "orange")
+      valueBox("N/A", "Growth in Giving per Attendee", icon = "fa-chart-line", color = church_colors$primary)
     )
   }
 
@@ -188,19 +288,21 @@ renderValueBox({
     paste0(round(growth, 1), "%"),
     "Growth in Giving per Attendee",
     icon = "fa-chart-line",
-    color = ifelse(growth >= 0, "pink", "red")
+    color = ifelse(growth >= 0, church_colors$success, church_colors$danger)
   )
 })
 ```
 
 
-Row 
+Row {.tabset}
 --------------------------------
 
+### Attendance 
 
-### Attendance Trend chart
 
-```{r}
+#### Attendance Trend Chart 
+
+```{r, fig.height=3}
 renderPlotly({
 
   plot_data <- filtered_attendance() %>%
@@ -229,6 +331,7 @@ renderPlotly({
       x = ~service_date,
       y = ~total,
       name = "Attendance",
+      line = list(color = church_colors$primary),
       hovertemplate = paste(
         "Date: %{x}<br>",
         "Attendance: %{y:,}<extra></extra>"
@@ -241,22 +344,150 @@ renderPlotly({
       x = ~service_date,
       y = ~trend,
       name = "Trend",
-      line = list(dash = "dash", color = "grey"),
+      line = list(
+          dash = "dash",
+          color = church_colors$neutral
+        ),
       hoverinfo = "skip"
     ) %>%
 
     layout(
-      title = "Attendance Over Time",
+      title = "Attendance",
+      height = 300, 
       xaxis = list(title = ""),
-      yaxis = list(title = "Attendance")
+      yaxis = list(title = "Weekly Attendance")
     )
 })
 ```
 
-Row 
---------------------------------
+```{r}
+fluidRow(
+  column(4,
+    renderPlotly({
+      plot_data <- filtered_attendance()
+      
+      if(nrow(plot_data) == 0){
+        return(NULL)
+      }
+      
+      total_attendees <- sum(plot_data$total_attendance, na.rm = TRUE)
+      total_first_time <- sum(plot_data$first_time_guests, na.rm = TRUE)
+      
+      total_regulars <- total_attendees - total_first_time
+      
+      pie_data <- tibble(
+        group = c("First-Time Guests", "Regular Attendees"),
+        value = c(total_first_time, total_regulars)
+      )
+      
+      plot_ly(
+        pie_data,
+        labels = ~group,
+        values = ~value,
+        type = "pie",
+        textinfo = "label+percent",
+        marker = list(colors = c(
+            church_colors$accent,
+            church_colors$primary
+          )),
+        hovertemplate = paste(
+          "%{label}<br>",
+          "Count: %{value:,}<br>",
+          "Percent: %{percent}<extra></extra>"
+        )
+      ) %>%
+        layout(
+          title = "First-Time Guests vs Regulars",
+          showlegend = TRUE
+        )
+    })
+  ),
+  column(4,
+    renderPlotly({
+      plot_data <- filtered_attendance()
+      
+      if(nrow(plot_data) == 0){
+        return(NULL)
+      }
+      
+      avg_children <- mean(plot_data$children_attendance, na.rm = TRUE)
+      avg_total    <- mean(plot_data$total_attendance, na.rm = TRUE)
+      avg_adults   <- avg_total - avg_children
+      
+      pie_data <- tibble(
+        group = c("Adult Attendees", "Children"),
+        value = c(avg_adults, avg_children)
+      )
+      
+      plot_ly(
+        pie_data,
+        labels = ~group,
+        values = ~value,
+        type = "pie",
+        textinfo = "label+percent",
+        marker = list(colors = c(
+            church_colors$primary,
+            church_colors$secondary
+          )),
+        hovertemplate = paste(
+          "%{label}<br>",
+          "Average Attendance: %{value:,.0f}<br>",
+          "Percent: %{percent}<extra></extra>"
+        )
+      ) %>%
+        layout(
+          title = "Average Attendance Composition",
+          showlegend = TRUE
+        )
+    })
+  ),
+  column(4,
+    renderPlotly({
+      plot_data <- filtered_attendance()
+      
+      if(nrow(plot_data) == 0){
+        return(NULL)
+      }
+      
+      # we assume volunteers are not counted in attendance
+      avg_volunteers <- mean(plot_data$volunteers_serving, na.rm = TRUE)
+      avg_attendees    <- mean(plot_data$total_attendance, na.rm = TRUE)
+      
+      
+      pie_data <- tibble(
+        group = c("Regular Attendees", "Volunteers"),
+        value = c(avg_attendees, avg_volunteers)
+      )
+      
+      plot_ly(
+        pie_data,
+        labels = ~group,
+        values = ~value,
+        type = "pie",
+        marker = list(colors = c(
+            church_colors$primary,
+            church_colors$accent
+          )),
+        textinfo = "label+percent",
+        hovertemplate = paste(
+          "%{label}<br>",
+          "Average: %{value:,.0f}<br>",
+          "Percent: %{percent}<extra></extra>"
+        )
+      ) %>%
+        layout(
+          title = "Attendees and Volunteers Composition",
+          showlegend = TRUE
+        )
+    })
+  )
+)
+```
 
-### Total Monthly Giving trend chart
+
+### Donations
+
+#### Total Monthly Giving trend chart
 
 ```{r}
 renderPlotly({
@@ -283,9 +514,10 @@ renderPlotly({
       x = ~month,
       y = ~total,
       name = "Giving",
+      line = list(color = church_colors$accent),
       hovertemplate = paste(
         "Month: %{x}<br>",
-        "Total Giving: $%{y:,.0f}<extra></extra>"
+        "Total Monthly Giving: $%{y:,.0f}<extra></extra>"
       )
     ) %>%
 
@@ -294,138 +526,45 @@ renderPlotly({
       x = ~month,
       y = ~trend,
       name = "Trend",
-      line = list(dash = "dash", color = "grey"),
+      line = list(
+          dash = "dash",
+          color = church_colors$neutral
+        ),
       hoverinfo = "skip"
     ) %>%
 
     layout(
-      title = "Giving Over Time",
+      title = "Giving",
       xaxis = list(title = ""),
-      yaxis = list(title = "Total Giving")
+      yaxis = list(title = "Monthly Giving")
     )
 })
 ```
 
-Row 
---------------------------------
+### Giving by Fund
 
-### Giving per Attendee 
-
-
-```{r}
-renderPlotly({
-
-  plot_data <- giving_per_attendee_data()
-
-  if(nrow(plot_data) < 2){
-    return(NULL)
-  }
-
-  plot_data$date_num <- as.numeric(plot_data$month)
-  model <- lm(giving_per_attendee ~ date_num, data = plot_data)
-  plot_data$trend <- predict(model)
-
-  plot_ly() %>%
-
-    add_lines(
-      data = plot_data,
-      x = ~month,
-      y = ~giving_per_attendee,
-      name = "Giving per Attendee",
-      hovertemplate = paste(
-        "Month: %{x}<br>",
-        "Giving per Attendee: $%{y:.2f}<extra></extra>"
-      )
-    ) %>%
-
-    add_lines(
-      data = plot_data,
-      x = ~month,
-      y = ~trend,
-      name = "Trend",
-      line = list(dash = "dash", color = "grey"),
-      hoverinfo = "skip"
-    ) %>%
-
-    layout(
-      title = "Giving per Attendee Over Time",
-      xaxis = list(title = ""),
-      yaxis = list(title = "Dollars per Attendee")
-    )
-})
-```
-
-Column
----------------------------------
-
-
-
-# Attendance 
-
-Best visuals:
-
-Line chart: Weekly attendance
-
-Bar chart: Guests per month
-
-Stacked area: Adults vs children
-
-# Giving
-
-
-Sidebar {.sidebar}
------------------------------------------------------------------------
-
-**Filtering Page**
-
-```{r}
-dateRangeInput(
-  "date_filter_giving",
-  "Select Date Range:",
-  start = min(attendance_data$service_date),
-  end   = max(attendance_data$service_date)
-)
-
-selectInput(
-  "fund_filter",
-  "Select Fund:",
-  choices = unique(donations_data$fund),
-  selected = unique(donations_data$fund),
-  multiple = TRUE
-)
-
-```
-
-
-Best visuals:
-
-Line chart: Monthly giving
-
-Bar chart: Giving by fund
-
-Pie chart: Fund distribution
-
-Histogram: Donation size distribution
-
-
-### Bar chart
-
+#### Giving by Fund
 ```{r}
 renderPlotly({
 
   plot_data <- filtered_donations() %>%
     group_by(fund) %>%
-    summarise(total = sum(amount))
+    summarise(total_amount = sum(amount, na.rm = TRUE)) %>%
+    arrange(desc(total_amount))
 
   p <- ggplot(plot_data, aes(
-        x = fund,
-        y = total,
+        x = reorder(fund, total_amount),
+        y = total_amount,
         text = paste(
           "Fund:", fund,
-          "<br>Total:", scales::dollar(total)
+          "<br>Total Giving:", scales::dollar(total_amount)
         )
       )) +
-      geom_col() +
+      geom_col(fill = church_colors$secondary)+
+      coord_flip() +
+      scale_y_continuous(
+        labels = scales::label_number(scale = 1e-3, suffix = "k")
+      ) +
       labs(
         title = "Giving by Fund",
         x = "",
@@ -437,58 +576,398 @@ renderPlotly({
 })
 ```
 
+<!-- Best visuals: -->
+
+<!-- Number on top: median amount given each month by a donor -->
+<!-- How many donors? -->
+
+<!-- Line chart: Monthly giving -->
+
+
+<!-- Pie chart: Fund distribution -->
+
+<!-- Histogram: Donation size distribution -->
+
+
+<!-- #### Bar chart -->
+
+<!-- ```{r} -->
+<!-- renderPlotly({ -->
+
+<!--   plot_data <- filtered_donations() %>% -->
+<!--     group_by(fund) %>% -->
+<!--     summarise(total = sum(amount)) -->
+
+<!--   p <- ggplot(plot_data, aes( -->
+<!--         x = fund, -->
+<!--         y = total, -->
+<!--         text = paste( -->
+<!--           "Fund:", fund, -->
+<!--           "<br>Total:", scales::dollar(total) -->
+<!--         ) -->
+<!--       )) + -->
+<!--       geom_col() + -->
+<!--       labs( -->
+<!--         title = "Giving by Fund", -->
+<!--         x = "", -->
+<!--         y = "Total Giving" -->
+<!--       ) + -->
+<!--       theme_minimal() -->
+
+<!--   ggplotly(p, tooltip = "text") -->
+<!-- }) -->
+<!-- ``` -->
+
+<!-- ### Budget -->
+
+<!-- Bar chart: Budget vs Actual by category -->
+<!-- ✔ Pie chart: % of total budget by category -->
+<!-- ✔ Horizontal bar chart: Remaining budget -->
+
+<!-- Pie chart works here because: -->
+
+<!-- It shows allocation proportions clearly -->
+
+<!-- Churches think in “where is our money going?” -->
+
+<!-- But always pair pie chart with numeric labels. -->
+
+<!-- #### Pie chart -->
+
+<!-- ```{r} -->
+<!-- renderPlotly({ -->
+
+<!--   plot_data <- budget_data %>% -->
+<!--     group_by(category) %>% -->
+<!--     summarise(total = sum(amount)) -->
+
+<!--   p <- ggplot(plot_data, aes( -->
+<!--         x = "", -->
+<!--         y = total, -->
+<!--         fill = category, -->
+<!--         text = paste( -->
+<!--           category, -->
+<!--           "<br>Total:", scales::dollar(total) -->
+<!--         ) -->
+<!--       )) + -->
+<!--       geom_col() + -->
+<!--       coord_polar(theta = "y") + -->
+<!--       labs(title = "Budget Allocation") + -->
+<!--       theme_void() -->
+
+<!--   ggplotly(p, tooltip = "text") -->
+<!-- }) -->
+<!-- ``` -->
+
 # Budget
 
-Bar chart: Budget vs Actual by category
-✔ Pie chart: % of total budget by category
-✔ Horizontal bar chart: Remaining budget
+Sidebar {.sidebar}
+-----------------------------------------------------------------------
 
-Pie chart works here because:
-
-It shows allocation proportions clearly
-
-Churches think in “where is our money going?”
-
-But always pair pie chart with numeric labels.
-
-### Pie chart
+**Filtering Page**
 
 ```{r}
-renderPlotly({
+### Select Year
 
-  plot_data <- budget_data %>%
+selectInput(
+  inputId = "budget_year",
+  label = NULL,
+  choices = sort(unique(budget_data$year)),
+  selected = max(budget_data$year)
+)
+```
+
+
+```{r}
+filtered_budget <- reactive({
+  req(input$budget_year)
+
+  budget_data %>%
+    filter(year == input$budget_year) %>%
     group_by(category) %>%
-    summarise(total = sum(amount))
-
-  p <- ggplot(plot_data, aes(
-        x = "",
-        y = total,
-        fill = category,
-        text = paste(
-          category,
-          "<br>Total:", scales::dollar(total)
-        )
-      )) +
-      geom_col() +
-      coord_polar(theta = "y") +
-      labs(title = "Budget Allocation") +
-      theme_void()
-
-  ggplotly(p, tooltip = "text")
+    summarise(
+      annual_budget = sum(annual_budget, na.rm = TRUE),
+      actual_spent  = sum(actual_spent, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      remaining = annual_budget - actual_spent,
+      percent_used = ifelse(annual_budget == 0, 0, actual_spent / annual_budget)
+    )
 })
 ```
 
-# Volunteers
 
-Great visuals:
+Row {.no-padding}
+-----------------------------------------------------------------------
 
-Value box: Total active volunteers
+### Total Budget
 
-Bar chart: Volunteers by ministry
+```{r}
+renderValueBox({
+  df <- filtered_budget()
 
-Histogram: Hours per month
+  total_budget <- sum(df$annual_budget)
 
-Line chart: New volunteers per month
+  valueBox(
+    paste0("$", format(round(total_budget,0), big.mark=",")),
+    "Total Budget",
+    icon = icon("wallet"),
+    color = church_colors$primary
+  )
+})
+```
 
-You can compute retention if you want to look fancy.
+### Total Spent
+
+```{r}
+renderValueBox({
+  df <- filtered_budget()
+
+  total_spent <- sum(df$actual_spent)
+
+  valueBox(
+    paste0("$", format(round(total_spent,0), big.mark=",")),
+    "Total Spent",
+    icon = icon("credit-card"),
+    color = church_colors$secondary
+  )
+})
+```
+
+### Remaining Budget
+
+```{r}
+renderValueBox({
+  df <- filtered_budget()
+
+  remaining <- sum(df$remaining)
+
+  valueBox(
+    paste0("$", format(round(remaining,0), big.mark=",")),
+    "Remaining",
+    icon = icon("piggy-bank"),
+    color = ifelse(remaining < 0, church_colors$danger, church_colors$success)
+  )
+})
+```
+
+Row {.no-padding}
+-----------------------------------------------------------------------
+
+```{r}
+renderPlotly({
+  df <- filtered_budget()
+
+  plot_ly(df) %>%
+    add_bars(x = ~category, y = ~annual_budget, name = "Budget", marker = list(color = church_colors$primary)) %>%
+    add_bars(x = ~category, y = ~actual_spent, name = "Actual", marker = list(color = church_colors$secondary)) %>%
+    layout(
+      barmode = "group",
+      yaxis = list(tickformat = "$,.0f"),
+      xaxis = list(title = ""),
+      legend = list(orientation = "h", y = -0.2)
+    )
+})
+```
+
+```{r}
+renderPlotly({
+  df <- filtered_budget() %>%
+    arrange(remaining)
+
+  plot_ly(
+    df,
+    x = ~remaining,
+    y = ~reorder(category, remaining),
+    marker = list(color = church_colors$success),
+    type = "bar"
+  ) %>%
+    layout(
+      xaxis = list(tickformat = "$,.0f", title = "Remaining"),
+      yaxis = list(title = "")
+    )
+})
+```
+
+```{r}
+renderPlotly({
+  df <- filtered_budget()
+
+  plot_ly(
+    df,
+    labels = ~category,
+    values = ~annual_budget,
+    type = "pie",
+    textinfo = "label+percent",
+    hovertemplate = "<b>%{label}</b><br>$%{value:,.0f}<extra></extra>",
+  marker = list(
+    colors = c(
+      church_colors$primary,
+      church_colors$secondary,
+      church_colors$accent,
+      church_colors$success,
+      church_colors$neutral
+    )
+  ) )%>%
+    layout(showlegend = FALSE)
+})
+```
+
+
+
+
+
+# Volunteers 
+
+Row {.no-padding}
+-----------------------------------------------------------------------
+
+### Active Volunteers
+
+```{r}
+renderValueBox({
+  
+ valueBox(
+  value = sum(volunteers_data$active == "TRUE", na.rm = TRUE),
+  caption = "Active Volunteers",
+  icon = "fa-users",
+  color = church_colors$primary
+)
+})
+
+```
+
+### Average Volunteer Hours per Month
+
+```{r}
+renderValueBox({
+
+  avg_hours <- volunteers_data %>%
+    filter(active == TRUE, hours_per_month >= 0) %>%
+    summarise(avg = mean(hours_per_month, na.rm = TRUE)) %>%
+    pull(avg)
+
+  valueBox(
+    value = round(avg_hours, 1),
+    caption = "Avg Hours Volunteered / Month",
+    icon = "fa-clock",                  # FontAwesome clock
+    color = church_colors$primary                  # flexdashboard color (we can override for custom)
+  )
+
+})
+```
+
+### Volunteer Retention Rate
+
+```{r}
+renderValueBox({
+
+  retention_rate <- volunteers_data %>%
+    mutate(
+      months_serving = interval(start_date, Sys.Date()) %/% months(1)
+    ) %>%
+    summarise(
+      retained = sum(active == TRUE & months_serving >= 6, na.rm = TRUE),
+      eligible = sum(months_serving >= 6, na.rm = TRUE)
+    ) %>%
+    mutate(rate = ifelse(eligible > 0, retained / eligible * 100, NA)) %>%
+    pull(rate)
+
+  valueBox(
+    value = paste0(round(retention_rate, 1), "%"),
+    caption = "6+ Month Retention",
+    icon = "fa-chart-line",                       # shows growth
+    color = church_colors$success
+    )
+  
+
+})
+```
+
+
+
+Row
+---------------------------------------------------------------------
+
+### Active Volunteers by Ministry
+
+```{r}
+ fluidRow(
+   column(6,
+renderPlotly({
+
+  ministry_data <- volunteers_data %>%
+    filter(active == TRUE) %>%
+    count(ministry) %>%
+    arrange(desc(n))
+
+  # Create color vector from your palette
+  palette_colors <- c(
+    church_colors$primary,
+    church_colors$secondary,
+    church_colors$accent,
+    church_colors$success,
+    church_colors$neutral,
+    church_colors$danger
+  )
+
+  plot_ly(
+    ministry_data,
+    labels = ~ministry,
+    values = ~n,
+    type = "pie",
+    textinfo = "percent",
+    hovertemplate = paste(
+      "<b>%{label}</b><br>",
+      "Volunteers: %{value}<br>",
+      "Percent: %{percent}<extra></extra>"
+    ),
+    marker = list(colors = palette_colors)
+  ) %>%
+    layout(
+      title = "Active Volunteers by Ministry",
+      showlegend = TRUE
+    )
+
+})
+),
+
+column(6, 
+       renderPlotly({
+
+  # Summarize new volunteers by year
+  yearly_new <- volunteers_data %>%
+    mutate(year = year(start_date)) %>%
+    count(year) %>%
+    arrange(year)
+
+  plot_ly(
+    yearly_new,
+    x = ~factor(year),                      # treat as discrete bars
+    y = ~n,
+    type = "bar",
+    marker = list(color = church_colors$primary),
+    text = ~n,
+    textposition = "auto",                  # shows counts on top of bars
+    hovertemplate = paste(
+      "Year: %{x}<br>",
+      "New Volunteers: %{y}<extra></extra>"
+    )
+  ) %>%
+    layout(
+      title = "New Volunteers Per Year",
+      xaxis = list(title = "Year"),
+      yaxis = list(title = "Number of Volunteers"),
+      showlegend = FALSE
+    )
+
+})
+       
+       )
+
+
+
+)
+```
 
