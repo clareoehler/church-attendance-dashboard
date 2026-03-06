@@ -90,11 +90,12 @@ church_colors <- list(
   accent    = "#E5989B",  # dusty rose
   success   = "#84A98C",  # sage green
   neutral   = "#B8B8C6",  # light cool gray
-  danger    = "#C44569"   # muted berry
+  danger    = "#C44569",  # muted berry
+  highlight = "#F3ECDC"
 )
 ```
 
-# Ministry Overview
+# Attendance & Giving
 
 Sidebar {.sidebar}
 -----------------------------------------------------------------------
@@ -297,7 +298,7 @@ renderValueBox({
 Row {.tabset}
 --------------------------------
 
-### Attendance 
+### Attendance Overview
 
 
 #### Attendance Trend Chart 
@@ -485,7 +486,7 @@ fluidRow(
 ```
 
 
-### Donations
+### Donations Trend
 
 #### Total Monthly Giving trend chart
 
@@ -541,9 +542,9 @@ renderPlotly({
 })
 ```
 
-### Giving by Fund
+### Donations by Fund
 
-#### Giving by Fund
+#### Donations by Fund
 ```{r}
 renderPlotly({
 
@@ -566,9 +567,9 @@ renderPlotly({
         labels = scales::label_number(scale = 1e-3, suffix = "k")
       ) +
       labs(
-        title = "Giving by Fund",
+        title = "Donations by Fund",
         x = "",
-        y = "Total Giving"
+        y = "Total Donations"
       ) +
       theme_minimal()
 
@@ -576,95 +577,12 @@ renderPlotly({
 })
 ```
 
-<!-- Best visuals: -->
-
-<!-- Number on top: median amount given each month by a donor -->
-<!-- How many donors? -->
-
-<!-- Line chart: Monthly giving -->
-
-
-<!-- Pie chart: Fund distribution -->
-
-<!-- Histogram: Donation size distribution -->
-
-
-<!-- #### Bar chart -->
-
-<!-- ```{r} -->
-<!-- renderPlotly({ -->
-
-<!--   plot_data <- filtered_donations() %>% -->
-<!--     group_by(fund) %>% -->
-<!--     summarise(total = sum(amount)) -->
-
-<!--   p <- ggplot(plot_data, aes( -->
-<!--         x = fund, -->
-<!--         y = total, -->
-<!--         text = paste( -->
-<!--           "Fund:", fund, -->
-<!--           "<br>Total:", scales::dollar(total) -->
-<!--         ) -->
-<!--       )) + -->
-<!--       geom_col() + -->
-<!--       labs( -->
-<!--         title = "Giving by Fund", -->
-<!--         x = "", -->
-<!--         y = "Total Giving" -->
-<!--       ) + -->
-<!--       theme_minimal() -->
-
-<!--   ggplotly(p, tooltip = "text") -->
-<!-- }) -->
-<!-- ``` -->
-
-<!-- ### Budget -->
-
-<!-- Bar chart: Budget vs Actual by category -->
-<!-- ✔ Pie chart: % of total budget by category -->
-<!-- ✔ Horizontal bar chart: Remaining budget -->
-
-<!-- Pie chart works here because: -->
-
-<!-- It shows allocation proportions clearly -->
-
-<!-- Churches think in “where is our money going?” -->
-
-<!-- But always pair pie chart with numeric labels. -->
-
-<!-- #### Pie chart -->
-
-<!-- ```{r} -->
-<!-- renderPlotly({ -->
-
-<!--   plot_data <- budget_data %>% -->
-<!--     group_by(category) %>% -->
-<!--     summarise(total = sum(amount)) -->
-
-<!--   p <- ggplot(plot_data, aes( -->
-<!--         x = "", -->
-<!--         y = total, -->
-<!--         fill = category, -->
-<!--         text = paste( -->
-<!--           category, -->
-<!--           "<br>Total:", scales::dollar(total) -->
-<!--         ) -->
-<!--       )) + -->
-<!--       geom_col() + -->
-<!--       coord_polar(theta = "y") + -->
-<!--       labs(title = "Budget Allocation") + -->
-<!--       theme_void() -->
-
-<!--   ggplotly(p, tooltip = "text") -->
-<!-- }) -->
-<!-- ``` -->
-
 # Budget
 
 Sidebar {.sidebar}
 -----------------------------------------------------------------------
 
-**Filtering Page**
+**Filter by Year**
 
 ```{r}
 ### Select Year
@@ -758,62 +676,77 @@ Row {.no-padding}
 ```{r}
 renderPlotly({
   df <- filtered_budget()
+  req(nrow(df) > 0)
+
+  df <- df %>%
+    mutate(
+      remaining = annual_budget - actual_spent,
+      remaining_color = ifelse(
+        remaining < 0,
+        church_colors$danger,
+        church_colors$success
+      )
+    )
 
   plot_ly(df) %>%
-    add_bars(x = ~category, y = ~annual_budget, name = "Budget", marker = list(color = church_colors$primary)) %>%
-    add_bars(x = ~category, y = ~actual_spent, name = "Actual", marker = list(color = church_colors$secondary)) %>%
+    add_bars(
+      x = ~category,
+      y = ~annual_budget,
+      name = "Budget",
+      marker = list(color = church_colors$primary)
+    ) %>%
+    add_bars(
+      x = ~category,
+      y = ~actual_spent,
+      name = "Actual",
+      marker = list(color = church_colors$secondary)
+    ) %>%
+    add_bars(
+      x = ~category,
+      y = ~remaining,
+      name = "Remaining",
+      marker = list(color = church_colors$success)
+    ) %>%
     layout(
       barmode = "group",
-      yaxis = list(tickformat = "$,.0f"),
-      xaxis = list(title = ""),
-      legend = list(orientation = "h", y = -0.2)
+      yaxis = list(
+        tickformat = "$,.0f",
+        gridcolor = church_colors$neutral
+      ),
+      xaxis = list(
+        title = "",
+        gridcolor = church_colors$neutral
+      ),
+      legend = list(orientation = "h", y = -0.2),
+      paper_bgcolor = "transparent",
+      plot_bgcolor = "transparent"
     )
 })
 ```
 
-```{r}
-renderPlotly({
-  df <- filtered_budget() %>%
-    arrange(remaining)
-
-  plot_ly(
-    df,
-    x = ~remaining,
-    y = ~reorder(category, remaining),
-    marker = list(color = church_colors$success),
-    type = "bar"
-  ) %>%
-    layout(
-      xaxis = list(tickformat = "$,.0f", title = "Remaining"),
-      yaxis = list(title = "")
-    )
-})
-```
-
-```{r}
-renderPlotly({
-  df <- filtered_budget()
-
-  plot_ly(
-    df,
-    labels = ~category,
-    values = ~annual_budget,
-    type = "pie",
-    textinfo = "label+percent",
-    hovertemplate = "<b>%{label}</b><br>$%{value:,.0f}<extra></extra>",
-  marker = list(
-    colors = c(
-      church_colors$primary,
-      church_colors$secondary,
-      church_colors$accent,
-      church_colors$success,
-      church_colors$neutral
-    )
-  ) )%>%
-    layout(showlegend = FALSE)
-})
-```
-
+<!-- # ```{r} -->
+<!-- # renderPlotly({ -->
+<!-- #   df <- filtered_budget() -->
+<!-- #  -->
+<!-- #   plot_ly( -->
+<!-- #     df, -->
+<!-- #     labels = ~category, -->
+<!-- #     values = ~annual_budget, -->
+<!-- #     type = "pie", -->
+<!-- #     textinfo = "label+percent", -->
+<!-- #     hovertemplate = "<b>%{label}</b><br>$%{value:,.0f}<extra></extra>", -->
+<!-- #   marker = list( -->
+<!-- #     colors = c( -->
+<!-- #       church_colors$highlight, -->
+<!-- #       church_colors$accent, -->
+<!-- #       church_colors$danger, -->
+<!-- #       church_colors$neutral -->
+<!-- #     ) -->
+<!-- #   ) )%>% -->
+<!-- #     layout(showlegend = FALSE) -->
+<!-- # }) -->
+<!-- # ``` -->
+<!-- #  -->
 
 
 
@@ -956,7 +889,7 @@ column(6,
     )
   ) %>%
     layout(
-      title = "New Volunteers Per Year",
+      title = "New Volunteers each Year",
       xaxis = list(title = "Year"),
       yaxis = list(title = "Number of Volunteers"),
       showlegend = FALSE
